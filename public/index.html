@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synology Photo Upload System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Synology Upload Center</h1>
+            <div class="header-actions">
+                <button id="test-connection-btn" class="btn btn-secondary">🔗 Test Connection</button>
+            </div>
+        </header>
+
+        <main>
+            <!-- Step 1: Select Photo Source -->
+            <section class="step-section" id="step1">
+                <h2>Step 1: Select Photographer</h2>
+                
+                <div class="form-group">
+                    <label for="photographer-select">Choose Photographer:</label>
+                    <select id="photographer-select" required>
+                        <option value="">Loading photographers...</option>
+                    </select>
+                </div>
+
+                <!-- New Photographer Form (hidden initially) -->
+                <div id="new-photographer-form" class="new-photographer-form hidden">
+                    <h3>Add New Photographer</h3>
+                    <form id="add-photographer-form" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label for="photographer-name">Photographer Name:</label>
+                            <input type="text" id="photographer-name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="agreement-file">Agreement PDF:</label>
+                            <input type="file" id="agreement-file" name="agreement" accept=".pdf" required>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Add Photographer</button>
+                            <button type="button" id="cancel-add-photographer" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Photographer Actions -->
+                <div id="photographer-actions" class="photographer-actions hidden">
+                    <div class="selected-photographer-info">
+                        <span class="photographer-name" id="selected-photographer-display"></span>
+                        <button type="button" id="view-agreement" class="btn btn-link">📄 View Agreement</button>
+                    </div>
+                </div>
+
+                <div class="step-actions">
+                    <button id="add-new-photographer" class="btn btn-secondary">➕ Add New Photographer</button>
+                    <button id="proceed-to-upload" class="btn btn-primary" disabled>Proceed to Photo Upload</button>
+                </div>
+            </section>
+
+            <!-- Step 2: Upload Photos -->
+            <section class="step-section hidden" id="step2">
+                <h2>Step 2: Upload Photos</h2>
+                
+                <div class="selected-photographer">
+                    <strong>Selected Photographer:</strong> <span id="selected-photographer-name"></span>
+                </div>
+
+                <form id="photo-upload-form" enctype="multipart/form-data">
+                    <input type="hidden" id="selected-photographer-id" name="photographerId">
+                    
+                    <div class="form-group">
+                        <label for="photo-files">Select Photos:</label>
+                        <input type="file" id="photo-files" name="photos" multiple accept="image/*" required>
+                        <div class="file-info">
+                            <small>Select multiple image files to upload to Synology NAS</small>
+                        </div>
+                    </div>
+
+                    <div id="photo-preview" class="photo-preview hidden">
+                        <h3>Selected Photos:</h3>
+                        <div id="photo-grid" class="photo-grid"></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="back-to-step1" class="btn btn-secondary">← Back</button>
+                        <button type="submit" class="btn btn-primary">Upload to Synology</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Upload Results -->
+            <section class="step-section hidden" id="upload-results">
+                <h2>Upload Results</h2>
+                <div id="results-content"></div>
+                <div class="form-actions">
+                    <button id="upload-more" class="btn btn-primary">Upload More Photos</button>
+                    <button id="start-over" class="btn btn-secondary">Start Over</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Status Messages -->
+        <div id="status-messages" class="status-messages"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
