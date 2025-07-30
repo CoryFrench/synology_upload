@@ -313,6 +313,90 @@ class SynologyAPI {
         
         return null; // Only create agent symlinks for properties, not amenities
     }
+
+    // Helper function to build Photos directory structure (for completed photos)
+    buildPhotosPath(propertyInfo) {
+        // Sanitize directory names (replace spaces and special characters)
+        const sanitize = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_') : '';
+        
+        const currentYear = new Date().getFullYear();
+        
+        if (propertyInfo.photoType === 'property') {
+            const sanitizedCounty = sanitize(propertyInfo.county);
+            const sanitizedCity = sanitize(propertyInfo.city);
+            const sanitizedDevelopment = sanitize(propertyInfo.development);
+            const sanitizedSubdivision = sanitize(propertyInfo.subdivision);
+            const sanitizedAgent = sanitize(propertyInfo.agent);
+            
+            // Build address from components
+            const addressParts = [
+                propertyInfo.streetNumber,
+                propertyInfo.streetName,
+                propertyInfo.streetSuffix
+            ].filter(part => part && part.trim()).join('_');
+            
+            const sanitizedAddress = sanitize(addressParts);
+            const sanitizedUnit = sanitize(propertyInfo.unitNumber);
+            
+            // Build final directory name: Address_AgentName_Year[_Unit]
+            let finalDirectoryName = `${sanitizedAddress}_${sanitizedAgent}_${currentYear}`;
+            if (sanitizedUnit) {
+                finalDirectoryName += `_${sanitizedUnit}`;
+            }
+            
+            // Structure: Photos/County/City/Development/Development/Address_AgentName_Year[_Unit]
+            const photosPath = `${this.uploadPath}/Photos/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${finalDirectoryName}`;
+            
+            return photosPath;
+            
+        } else if (propertyInfo.photoType === 'amenity') {
+            const sanitizedCounty = sanitize(propertyInfo.county);
+            const sanitizedCity = sanitize(propertyInfo.city);
+            const sanitizedDevelopment = sanitize(propertyInfo.development);
+            const sanitizedAmenity = sanitize(propertyInfo.amenityDescription);
+            
+            // For amenities, we'll also include the year
+            const finalDirectoryName = `${sanitizedAmenity}_${currentYear}`;
+            
+            // Structure: Photos/Amenities/County/City/Development/AmenityDescription_Year
+            const photosPath = `${this.uploadPath}/Photos/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${finalDirectoryName}`;
+            
+            return photosPath;
+        }
+        
+        throw new Error('Invalid photo type');
+    }
+
+    // Helper function to build Photos agent-based symlink path
+    buildPhotosAgentPath(propertyInfo) {
+        const sanitize = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_') : '';
+        const currentYear = new Date().getFullYear();
+        
+        if (propertyInfo.photoType === 'property') {
+            const sanitizedAgent = sanitize(propertyInfo.agent);
+            
+            // Build address from components
+            const addressParts = [
+                propertyInfo.streetNumber,
+                propertyInfo.streetName,
+                propertyInfo.streetSuffix
+            ].filter(part => part && part.trim()).join('_');
+            
+            const sanitizedAddress = sanitize(addressParts);
+            const sanitizedUnit = sanitize(propertyInfo.unitNumber);
+            
+            // Build final directory name: Address_AgentName_Year[_Unit]
+            let finalDirectoryName = `${sanitizedAddress}_${sanitizedAgent}_${currentYear}`;
+            if (sanitizedUnit) {
+                finalDirectoryName += `_${sanitizedUnit}`;
+            }
+            
+            // Photos Agent-based path: Photos/Agent/AgentName/Year/Address_AgentName_Year[_Unit]
+            return `${this.uploadPath}/Photos/Agent/${sanitizedAgent}/${currentYear}/${finalDirectoryName}`;
+        }
+        
+        return null; // Only create agent symlinks for properties, not amenities
+    }
 }
 
 // SSH Client for creating symbolic links
@@ -396,6 +480,55 @@ class SynologySSH {
             
         } catch (error) {
             console.error(`❌ Failed to create symlink:`, error.message);
+            throw error;
+        }
+    }
+
+    async createPhotosDirectoryStructure(photosPath) {
+        try {
+            // Convert API path to volume path
+            const photosVolumePath = photosPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            
+            console.log(`📁 Creating Photos directory structure: ${photosVolumePath}`);
+            
+            // Create the Photos directory structure (empty, ready for completed photos)
+            await this.executeCommand(`mkdir -p "${photosVolumePath}"`);
+            
+            console.log(`✅ Photos directory structure created successfully`);
+            return true;
+            
+        } catch (error) {
+            console.error(`❌ Failed to create Photos directory structure:`, error.message);
+            throw error;
+        }
+    }
+
+    async createCompletedSymlink(listingsPath, photosPath) {
+        try {
+            // Convert API paths to volume paths
+            const listingsVolumePath = listingsPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            const photosVolumePath = photosPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            
+            // Create a symlink in the listings directory pointing to the photos (completed) directory
+            const completedSymlinkPath = `${listingsVolumePath}/Completed_Photos`;
+            
+            console.log(`🔗 Creating completed photos symlink:`);
+            console.log(`   Listings: ${listingsVolumePath}`);
+            console.log(`   Photos: ${photosVolumePath}`);
+            console.log(`   Symlink: ${completedSymlinkPath}`);
+            
+            // Remove existing symlink if it exists
+            await this.executeCommand(`rm -f "${completedSymlinkPath}"`);
+            
+            // Create the symbolic link from listings to photos
+            const linkCommand = `ln -s "${photosVolumePath}" "${completedSymlinkPath}"`;
+            await this.executeCommand(linkCommand);
+            
+            console.log(`✅ Completed photos symlink created successfully`);
+            return true;
+            
+        } catch (error) {
+            console.error(`❌ Failed to create completed photos symlink:`, error.message);
             throw error;
         }
     }
@@ -772,22 +905,75 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             }
         }
 
-        // Create agent-based symlink for property photos (points to base directory, not versioned folder)
+        // Create directory structures and symlinks for successful uploads
         let symlinkResult = null;
+        let photosResult = null;
+        
+        if (uploadResults.some(r => r.success)) {
+            try {
+                // Build Photos directory path
+                const photosPath = synologyAPI.buildPhotosPath(propertyInfo);
+                
+                // Create Photos directory structure (empty, ready for completed photos)
+                await synologySSH.createPhotosDirectoryStructure(photosPath);
+                
+                // Create symlink from Listings property to Photos completed directory
+                await synologySSH.createCompletedSymlink(basePath, photosPath);
+                
+                photosResult = {
+                    success: true,
+                    photosPath: photosPath,
+                    message: 'Photos directory structure and completed symlink created'
+                };
+                console.log(`📁 Photos directory created: ${photosPath}`);
+                console.log(`🔗 Completed photos symlink created: ${basePath}/Completed_Photos -> ${photosPath}`);
+                
+            } catch (error) {
+                console.error(`⚠️ Failed to create Photos directory structure:`, error.message);
+                photosResult = {
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
+        // Create agent-based symlinks for property photos
         if (propertyInfo.photoType === 'property' && uploadResults.some(r => r.success)) {
             try {
-                const agentPath = synologyAPI.buildAgentPath(propertyInfo);
-                if (agentPath) {
-                    // Symlink should point to the base property directory, not the specific Originals_v# folder
-                    await synologySSH.createSymlink(basePath, agentPath);
-                    symlinkResult = {
-                        success: true,
-                        agentPath: agentPath
-                    };
-                    console.log(`🔗 Agent symlink created: ${agentPath} -> ${basePath}`);
+                const results = [];
+                
+                // Create Listings agent symlink (points to base directory, not versioned folder)
+                const listingsAgentPath = synologyAPI.buildAgentPath(propertyInfo);
+                if (listingsAgentPath) {
+                    await synologySSH.createSymlink(basePath, listingsAgentPath);
+                    results.push({
+                        type: 'listings',
+                        agentPath: listingsAgentPath,
+                        target: basePath
+                    });
+                    console.log(`🔗 Listings agent symlink created: ${listingsAgentPath} -> ${basePath}`);
                 }
+                
+                // Create Photos agent symlink (points to Photos directory)
+                const photosAgentPath = synologyAPI.buildPhotosAgentPath(propertyInfo);
+                const photosPath = synologyAPI.buildPhotosPath(propertyInfo);
+                if (photosAgentPath && photosPath) {
+                    await synologySSH.createSymlink(photosPath, photosAgentPath);
+                    results.push({
+                        type: 'photos',
+                        agentPath: photosAgentPath,
+                        target: photosPath
+                    });
+                    console.log(`🔗 Photos agent symlink created: ${photosAgentPath} -> ${photosPath}`);
+                }
+                
+                symlinkResult = {
+                    success: true,
+                    symlinks: results
+                };
+                
             } catch (error) {
-                console.error(`⚠️ Failed to create agent symlink:`, error.message);
+                console.error(`⚠️ Failed to create agent symlinks:`, error.message);
                 symlinkResult = {
                     success: false,
                     error: error.message
@@ -801,11 +987,13 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
                 ...propertyInfo,
                 basePath,
                 targetPath,
-                originalsVersion
+                originalsVersion,
+                photosPath: photosResult?.success ? synologyAPI.buildPhotosPath(propertyInfo) : null
             },
             uploads: uploadResults,
             permissions: permissionResult,
             symlink: symlinkResult,
+            photos: photosResult,
             totalFiles: req.files.length,
             successfulUploads: uploadResults.filter(r => r.success).length
         });
