@@ -215,10 +215,10 @@ class SynologyAPI {
                 finalDirectoryName += `_${sanitizedUnit}`;
             }
             
-            // Structure: Listings/County/City/Development/Development/Address_AgentName_Year[_Unit]
-            const path = `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${finalDirectoryName}`;
+            // Structure: Listings/County/City/Development/Development/Address_AgentName_Year[_Unit]/Originals_v#
+            const basePath = `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${finalDirectoryName}`;
             
-            return path;
+            return basePath;
             
         } else if (propertyInfo.photoType === 'amenity') {
             const sanitizedCounty = sanitize(propertyInfo.county);
@@ -229,11 +229,58 @@ class SynologyAPI {
             // For amenities, we'll also include the year
             const finalDirectoryName = `${sanitizedAmenity}_${currentYear}`;
             
-            // Structure: Amenities/County/City/Development/AmenityDescription_Year
-            return `${this.uploadPath}/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${finalDirectoryName}`;
+            // Structure: Amenities/County/City/Development/AmenityDescription_Year/Originals_v#
+            const basePath = `${this.uploadPath}/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${finalDirectoryName}`;
+            
+            return basePath;
         }
         
         throw new Error('Invalid photo type');
+    }
+
+    // Helper function to determine the next version number for Originals folder
+    async determineOriginalsVersion(basePath) {
+        try {
+            // Convert API path to volume path for SSH commands
+            const volumePath = basePath.replace(this.uploadPath, synologySSH.volumePath);
+            
+            console.log(`🔍 Checking for existing Originals versions in: ${volumePath}`);
+            
+            // List existing Originals_v# directories
+            const listCommand = `find "${volumePath}" -maxdepth 1 -type d -name "Originals_v*" 2>/dev/null | sort -V`;
+            
+            try {
+                const result = await synologySSH.executeCommand(listCommand);
+                const existingVersions = result.stdout.trim().split('\n').filter(line => line.trim());
+                
+                if (existingVersions.length === 0) {
+                    console.log(`📁 No existing Originals folders found, starting with v1`);
+                    return 1;
+                }
+                
+                // Extract version numbers and find the highest
+                const versionNumbers = existingVersions.map(path => {
+                    const match = path.match(/Originals_v(\d+)$/);
+                    return match ? parseInt(match[1]) : 0;
+                }).filter(num => num > 0);
+                
+                const highestVersion = Math.max(...versionNumbers);
+                const nextVersion = highestVersion + 1;
+                
+                console.log(`📁 Found ${existingVersions.length} existing Originals folders, highest version: v${highestVersion}, next version: v${nextVersion}`);
+                return nextVersion;
+                
+            } catch (findError) {
+                // If directory doesn't exist yet or find command fails, start with v1
+                console.log(`📁 Directory doesn't exist yet or find failed, starting with v1`);
+                return 1;
+            }
+            
+        } catch (error) {
+            console.error(`⚠️ Error determining Originals version:`, error.message);
+            // Default to v1 if there's any error
+            return 1;
+        }
     }
 
     // Helper function to build agent-based symlink path
@@ -643,9 +690,17 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             }
         }
 
-        // Build the target directory path
-        const targetPath = synologyAPI.buildPropertyPath(propertyInfo);
-        console.log(`🏠 Target directory: ${targetPath}`);
+        // Build the base property path
+        const basePath = synologyAPI.buildPropertyPath(propertyInfo);
+        
+        // Determine the next Originals version number
+        const originalsVersion = await synologyAPI.determineOriginalsVersion(basePath);
+        
+        // Build the final target path with Originals_v# folder
+        const targetPath = `${basePath}/Originals_v${originalsVersion}`;
+        
+        console.log(`🏠 Base directory: ${basePath}`);
+        console.log(`📁 Upload target: ${targetPath} (version ${originalsVersion})`);
 
         const uploadResults = [];
         
@@ -717,18 +772,19 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             }
         }
 
-        // Create agent-based symlink for property photos
+        // Create agent-based symlink for property photos (points to base directory, not versioned folder)
         let symlinkResult = null;
         if (propertyInfo.photoType === 'property' && uploadResults.some(r => r.success)) {
             try {
                 const agentPath = synologyAPI.buildAgentPath(propertyInfo);
                 if (agentPath) {
-                    await synologySSH.createSymlink(targetPath, agentPath);
+                    // Symlink should point to the base property directory, not the specific Originals_v# folder
+                    await synologySSH.createSymlink(basePath, agentPath);
                     symlinkResult = {
                         success: true,
                         agentPath: agentPath
                     };
-                    console.log(`🔗 Agent symlink created: ${agentPath}`);
+                    console.log(`🔗 Agent symlink created: ${agentPath} -> ${basePath}`);
                 }
             } catch (error) {
                 console.error(`⚠️ Failed to create agent symlink:`, error.message);
@@ -743,7 +799,9 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             photographer: photographer.name,
             property: {
                 ...propertyInfo,
-                targetPath
+                basePath,
+                targetPath,
+                originalsVersion
             },
             uploads: uploadResults,
             permissions: permissionResult,
