@@ -7,6 +7,7 @@ const csv = require('csv-parser');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const axios = require('axios');
 const FormData = require('form-data');
+const { Client } = require('ssh2');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -234,9 +235,124 @@ class SynologyAPI {
         
         throw new Error('Invalid photo type');
     }
+
+    // Helper function to build agent-based symlink path
+    buildAgentPath(propertyInfo) {
+        const sanitize = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_') : '';
+        const currentYear = new Date().getFullYear();
+        
+        if (propertyInfo.photoType === 'property') {
+            const sanitizedAgent = sanitize(propertyInfo.agent);
+            
+            // Build address from components
+            const addressParts = [
+                propertyInfo.streetNumber,
+                propertyInfo.streetName,
+                propertyInfo.streetSuffix
+            ].filter(part => part && part.trim()).join('_');
+            
+            const sanitizedAddress = sanitize(addressParts);
+            const sanitizedUnit = sanitize(propertyInfo.unitNumber);
+            
+            // Build final directory name: Address_AgentName_Year[_Unit]
+            let finalDirectoryName = `${sanitizedAddress}_${sanitizedAgent}_${currentYear}`;
+            if (sanitizedUnit) {
+                finalDirectoryName += `_${sanitizedUnit}`;
+            }
+            
+            // Agent-based path: Listings/Agent/AgentName/Address_AgentName_Year[_Unit]
+            return `${this.uploadPath}/Listings/Agent/${sanitizedAgent}/${finalDirectoryName}`;
+        }
+        
+        return null; // Only create agent symlinks for properties, not amenities
+    }
+}
+
+// SSH Client for creating symbolic links
+class SynologySSH {
+    constructor() {
+        this.host = process.env.SSH_HOST;
+        this.port = process.env.SSH_PORT || 22;
+        this.username = process.env.SSH_USERNAME;
+        this.password = process.env.SSH_PASSWORD;
+        this.volumePath = process.env.VOLUME_PATH;
+    }
+
+    async executeCommand(command) {
+        return new Promise((resolve, reject) => {
+            const conn = new Client();
+            
+            conn.on('ready', () => {
+                console.log(`🔧 SSH: Executing command: ${command}`);
+                
+                conn.exec(command, (err, stream) => {
+                    if (err) {
+                        conn.end();
+                        return reject(err);
+                    }
+                    
+                    let stdout = '';
+                    let stderr = '';
+                    
+                    stream.on('close', (code, signal) => {
+                        conn.end();
+                        if (code === 0) {
+                            console.log(`✅ SSH: Command executed successfully`);
+                            resolve({ stdout, stderr, code });
+                        } else {
+                            console.log(`❌ SSH: Command failed with code ${code}`);
+                            reject(new Error(`Command failed with code ${code}: ${stderr}`));
+                        }
+                    }).on('data', (data) => {
+                        stdout += data.toString();
+                    }).stderr.on('data', (data) => {
+                        stderr += data.toString();
+                    });
+                });
+            }).on('error', (err) => {
+                reject(err);
+            }).connect({
+                host: this.host,
+                port: this.port,
+                username: this.username,
+                password: this.password
+            });
+        });
+    }
+
+    async createSymlink(primaryPath, symlinkPath) {
+        try {
+            // Convert API paths to volume paths
+            const primaryVolumePath = primaryPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            const symlinkVolumePath = symlinkPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            
+            console.log(`🔗 Creating symlink:`);
+            console.log(`   Primary: ${primaryVolumePath}`);
+            console.log(`   Symlink: ${symlinkVolumePath}`);
+            
+            // Create parent directory for symlink
+            const symlinkParent = symlinkVolumePath.substring(0, symlinkVolumePath.lastIndexOf('/'));
+            await this.executeCommand(`mkdir -p "${symlinkParent}"`);
+            
+            // Remove existing symlink if it exists
+            await this.executeCommand(`rm -f "${symlinkVolumePath}"`);
+            
+            // Create the symbolic link
+            const linkCommand = `ln -s "${primaryVolumePath}" "${symlinkVolumePath}"`;
+            await this.executeCommand(linkCommand);
+            
+            console.log(`✅ Symlink created successfully`);
+            return true;
+            
+        } catch (error) {
+            console.error(`❌ Failed to create symlink:`, error.message);
+            throw error;
+        }
+    }
 }
 
 const synologyAPI = new SynologyAPI();
+const synologySSH = new SynologySSH();
 
 // Helper function to read photographers from CSV
 function readPhotographers() {
@@ -408,6 +524,28 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             }
         }
 
+        // Create agent-based symlink for property photos
+        let symlinkResult = null;
+        if (propertyInfo.photoType === 'property' && uploadResults.some(r => r.success)) {
+            try {
+                const agentPath = synologyAPI.buildAgentPath(propertyInfo);
+                if (agentPath) {
+                    await synologySSH.createSymlink(targetPath, agentPath);
+                    symlinkResult = {
+                        success: true,
+                        agentPath: agentPath
+                    };
+                    console.log(`🔗 Agent symlink created: ${agentPath}`);
+                }
+            } catch (error) {
+                console.error(`⚠️ Failed to create agent symlink:`, error.message);
+                symlinkResult = {
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
         res.json({
             photographer: photographer.name,
             property: {
@@ -415,6 +553,7 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
                 targetPath
             },
             uploads: uploadResults,
+            symlink: symlinkResult,
             totalFiles: req.files.length,
             successfulUploads: uploadResults.filter(r => r.success).length
         });
@@ -442,6 +581,20 @@ app.get('/api/test-synology', async (req, res) => {
     try {
         await synologyAPI.login();
         res.json({ success: true, message: 'Successfully connected to Synology NAS' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Test SSH connection
+app.get('/api/test-ssh', async (req, res) => {
+    try {
+        const result = await synologySSH.executeCommand('whoami && pwd');
+        res.json({ 
+            success: true, 
+            message: 'Successfully connected via SSH',
+            output: result.stdout.trim()
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

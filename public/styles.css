@@ -393,6 +393,52 @@ main {
     color: #e74c3c;
 }
 
+.permissions-details {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+}
+
+.permissions-details h4 {
+    color: #495057;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+.permission-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    background: white;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.permission-item.success {
+    border-left: 4px solid #17a2b8;
+}
+
+.permission-item.error {
+    border-left: 4px solid #ffc107;
+}
+
+.permission-status {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.permission-status.success {
+    color: #17a2b8;
+}
+
+.permission-status.error {
+    color: #856404;
+}
+
 .loading {
     opacity: 0.6;
     pointer-events: none;

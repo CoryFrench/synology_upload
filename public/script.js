@@ -14,8 +14,9 @@ class PhotoUploadApp {
     }
 
     bindEvents() {
-        // Test connection
+        // Test connections
         document.getElementById('test-connection-btn').addEventListener('click', () => this.testConnection());
+        document.getElementById('test-ssh-btn').addEventListener('click', () => this.testSSH());
         
         // Photographer selection
         document.getElementById('photographer-select').addEventListener('change', (e) => this.onPhotographerSelect(e));
@@ -358,11 +359,22 @@ class PhotoUploadApp {
         
         const summary = document.createElement('div');
         summary.className = 'upload-summary';
+        
+        let symlinkInfo = '';
+        if (result.symlink) {
+            if (result.symlink.success) {
+                symlinkInfo = `<p><strong>Agent Symlink:</strong> ✅ ${result.symlink.agentPath}</p>`;
+            } else {
+                symlinkInfo = `<p><strong>Agent Symlink:</strong> ❌ Failed - ${result.symlink.error}</p>`;
+            }
+        }
+        
         summary.innerHTML = `
             <h3>Upload Summary</h3>
             <p><strong>Photographer:</strong> ${result.photographer}</p>
-            <p><strong>Property:</strong> ${result.property.address}, ${result.property.city}, ${result.property.county}</p>
-            <p><strong>Upload Path:</strong> ${result.property.targetPath}</p>
+            <p><strong>Property:</strong> ${this.getPropertyDisplayText(result.property)}</p>
+            <p><strong>Primary Path:</strong> ${result.property.targetPath}</p>
+            ${symlinkInfo}
             <p><strong>Total Files:</strong> ${result.totalFiles}</p>
             <p><strong>Successful Uploads:</strong> ${result.successfulUploads}</p>
             <p><strong>Failed Uploads:</strong> ${result.totalFiles - result.successfulUploads}</p>
@@ -414,21 +426,51 @@ class PhotoUploadApp {
 
     async testConnection() {
         try {
-            this.showMessage('Testing Synology connection...', 'info');
+            this.showMessage('Testing Synology API connection...', 'info');
             
             const response = await fetch('/api/test-synology');
             const result = await response.json();
             
             if (result.success) {
-                this.showMessage('Successfully connected to Synology NAS!', 'success');
+                this.showMessage('Successfully connected to Synology NAS API!', 'success');
             } else {
-                this.showMessage(`Connection failed: ${result.error}`, 'error');
+                this.showMessage(`API connection failed: ${result.error}`, 'error');
             }
             
         } catch (error) {
-            console.error('Error testing connection:', error);
-            this.showMessage('Failed to test connection', 'error');
+            console.error('Error testing API connection:', error);
+            this.showMessage('Failed to test API connection', 'error');
         }
+    }
+
+    async testSSH() {
+        try {
+            this.showMessage('Testing SSH connection...', 'info');
+            
+            const response = await fetch('/api/test-ssh');
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showMessage(`SSH connection successful! Output: ${result.output}`, 'success');
+            } else {
+                this.showMessage(`SSH connection failed: ${result.error}`, 'error');
+            }
+            
+        } catch (error) {
+            console.error('Error testing SSH connection:', error);
+            this.showMessage('Failed to test SSH connection', 'error');
+        }
+    }
+
+    getPropertyDisplayText(property) {
+        if (property.photoType === 'property') {
+            const address = `${property.streetNumber || ''} ${property.streetName || ''} ${property.streetSuffix || ''}`.trim();
+            const unit = property.unitNumber ? `, ${property.unitNumber}` : '';
+            return `${address}${unit}, ${property.city || ''}, ${property.county || ''}`;
+        } else if (property.photoType === 'amenity') {
+            return `${property.amenityDescription || ''} - ${property.development || ''}, ${property.city || ''}, ${property.county || ''}`;
+        }
+        return 'Unknown property type';
     }
 
     startOver() {
