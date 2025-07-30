@@ -307,8 +307,8 @@ class SynologyAPI {
                 finalDirectoryName += `_${sanitizedUnit}`;
             }
             
-            // Agent-based path: Listings/Agent/AgentName/Address_AgentName_Year[_Unit]
-            return `${this.uploadPath}/Listings/Agent/${sanitizedAgent}/${finalDirectoryName}`;
+            // Agent-based path: Listings/Agent/AgentName/Year/Address_AgentName_Year[_Unit]
+            return `${this.uploadPath}/Listings/Agent/${sanitizedAgent}/${currentYear}/${finalDirectoryName}`;
         }
         
         return null; // Only create agent symlinks for properties, not amenities
