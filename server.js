@@ -285,7 +285,10 @@ class SynologySSH {
             conn.on('ready', () => {
                 console.log(`🔧 SSH: Executing command: ${command}`);
                 
-                conn.exec(command, (err, stream) => {
+                // Set HOME to /tmp to avoid home directory issues and use absolute paths
+                const wrappedCommand = `export HOME=/tmp && cd /tmp && ${command}`;
+                
+                conn.exec(wrappedCommand, (err, stream) => {
                     if (err) {
                         conn.end();
                         return reject(err);
@@ -346,6 +349,148 @@ class SynologySSH {
             
         } catch (error) {
             console.error(`❌ Failed to create symlink:`, error.message);
+            throw error;
+        }
+    }
+
+    async checkSynoacltool() {
+        try {
+            // Check if synoacltool is available at the standard location
+            await this.executeCommand('which /usr/syno/bin/synoacltool || ls -la /usr/syno/bin/synoacltool');
+            return '/usr/syno/bin/synoacltool';
+        } catch (error) {
+            // Try alternative locations
+            try {
+                await this.executeCommand('which synoacltool');
+                return 'synoacltool';
+            } catch (altError) {
+                console.log('🔍 Checking for synoacltool in common locations...');
+                const locations = [
+                    '/usr/syno/bin/synoacltool',
+                    '/usr/bin/synoacltool',
+                    '/bin/synoacltool',
+                    '/usr/local/bin/synoacltool'
+                ];
+                
+                for (const location of locations) {
+                    try {
+                        await this.executeCommand(`test -f "${location}" && echo "found"`);
+                        console.log(`✅ Found synoacltool at: ${location}`);
+                        return location;
+                    } catch (e) {
+                        // Continue searching
+                    }
+                }
+                
+                throw new Error('synoacltool not found in any standard locations. Please check if it is installed on your Synology system.');
+            }
+        }
+    }
+
+    async setFilePermissions(filePath, readOnlyForOthers = true) {
+        try {
+            // Convert API path to volume path
+            const volumePath = filePath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            
+            console.log(`🔒 Setting permissions for: ${volumePath}`);
+            console.log(`📋 Read-only for others: ${readOnlyForOthers}`);
+            
+            // Check if synoacltool is available
+            const synoacltoolPath = await this.checkSynoacltool();
+            
+            // Step 1: Remove all existing ACLs
+            await this.executeCommand(`${synoacltoolPath} -del "${volumePath}"`);
+            
+            // Step 2: Set archive bit to disable inheritance but allow custom ACLs
+            await this.executeCommand(`${synoacltoolPath} -set-archive "${volumePath}" has_ACL`);
+            
+            // Define users and groups that should have read-only access
+            const readOnlyUsers = ['admin'];
+            const readOnlyGroups = [
+                'administrators',
+                'WFPADMIN\\Domain Users', 
+                'WFPADMIN\\Domain Admins',
+                'WFPADMIN\\Enterprise Admins'
+            ];
+            
+            // Define permission strings
+            const readOnlyPermissions = 'r-x---a-R-c--';  // Read-only
+            const fullPermissions = 'rwxp--a-R-cC-';      // Read/Write
+            
+            // Step 3: Add full permissions for wfadmin (your superadmin user)
+            console.log(`📝 Adding full permissions for wfadmin...`);
+            await this.executeCommand(`${synoacltoolPath} -add "${volumePath}" "user:wfadmin:allow:${fullPermissions}:---"`);
+            
+            if (readOnlyForOthers) {
+                // Step 4: Add read-only permissions for other users
+                console.log(`📝 Adding read-only permissions for other users...`);
+                for (const user of readOnlyUsers) {
+                    await this.executeCommand(`${synoacltoolPath} -add "${volumePath}" "user:${user}:allow:${readOnlyPermissions}:---"`);
+                }
+                
+                // Step 5: Add read-only permissions for groups
+                console.log(`📝 Adding read-only permissions for groups...`);
+                for (const group of readOnlyGroups) {
+                    await this.executeCommand(`${synoacltoolPath} -add "${volumePath}" "group:\\"${group}\\":allow:${readOnlyPermissions}:---"`);
+                }
+            }
+            
+            console.log(`✅ Permissions set successfully for ${volumePath}`);
+            return true;
+            
+        } catch (error) {
+            console.error(`❌ Failed to set permissions with synoacltool:`, error.message);
+            
+            // Fallback to standard Unix permissions if synoacltool fails
+            console.log(`🔄 Attempting fallback to standard Unix permissions...`);
+            try {
+                // Convert API path to volume path (in case it wasn't done above due to early error)
+                const fallbackVolumePath = filePath.replace(process.env.UPLOAD_PATH, this.volumePath);
+                
+                // Set file to read-only for group and others, but writable for owner (wfadmin)
+                await this.executeCommand(`chmod 644 "${fallbackVolumePath}"`);
+                
+                // Try to change ownership to wfadmin if possible
+                await this.executeCommand(`chown wfadmin "${fallbackVolumePath}" || true`);
+                
+                console.log(`✅ Fallback permissions set successfully for ${fallbackVolumePath}`);
+                return true;
+            } catch (fallbackError) {
+                console.error(`❌ Fallback permission setting also failed:`, fallbackError.message);
+                throw new Error(`Both synoacltool and standard permissions failed: ${error.message}`);
+            }
+        }
+    }
+
+    async setDirectoryPermissions(directoryPath, readOnlyForOthers = true) {
+        try {
+            // Convert API path to volume path
+            const volumePath = directoryPath.replace(process.env.UPLOAD_PATH, this.volumePath);
+            
+            console.log(`🔒 Setting permissions for all files in directory: ${volumePath}`);
+            
+            // Find all files in the directory (including subdirectories)
+            const findCommand = `find "${volumePath}" -type f`;
+            const result = await this.executeCommand(findCommand);
+            
+            const files = result.stdout.trim().split('\n').filter(file => file.trim());
+            
+            console.log(`📁 Found ${files.length} files to update permissions`);
+            
+            // Set permissions on each file
+            for (const file of files) {
+                if (file.trim()) {
+                    // Convert back to API path for the setFilePermissions method
+                    const apiPath = file.replace(this.volumePath, process.env.UPLOAD_PATH);
+                    await this.setFilePermissions(apiPath, readOnlyForOthers);
+                }
+            }
+            
+            console.log(`✅ Directory permissions updated for ${files.length} files`);
+            return { success: true, filesUpdated: files.length };
+            
+        } catch (error) {
+            console.error(`❌ Failed to set directory permissions:`, error.message);
             throw error;
         }
     }
@@ -524,6 +669,54 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             }
         }
 
+        // Set read-only permissions for each successfully uploaded file (except for wfadmin)
+        let permissionResult = null;
+        const successfulUploads = uploadResults.filter(r => r.success);
+        if (successfulUploads.length > 0) {
+            try {
+                console.log(`🔒 Setting read-only permissions for ${successfulUploads.length} uploaded files...`);
+                
+                const permissionPromises = [];
+                for (const uploadResult of successfulUploads) {
+                    // Build the full file path: targetPath + "/" + filename
+                    const fullFilePath = `${targetPath}/${uploadResult.filename}`;
+                    console.log(`📝 Setting permissions for: ${uploadResult.filename}`);
+                    
+                    // Set permissions on this specific file
+                    permissionPromises.push(
+                        synologySSH.setFilePermissions(fullFilePath, true).catch(error => {
+                            console.error(`⚠️ Failed to set permissions for ${uploadResult.filename}:`, error.message);
+                            return { filename: uploadResult.filename, error: error.message };
+                        })
+                    );
+                }
+                
+                // Wait for all permission operations to complete
+                const permissionResults = await Promise.all(permissionPromises);
+                const failedPermissions = permissionResults.filter(result => result && result.error);
+                
+                permissionResult = {
+                    success: failedPermissions.length === 0,
+                    filesUpdated: successfulUploads.length - failedPermissions.length,
+                    totalFiles: successfulUploads.length,
+                    failedFiles: failedPermissions,
+                    message: failedPermissions.length === 0 
+                        ? `Read-only permissions set for ${successfulUploads.length} files. wfadmin has full access.`
+                        : `Permissions set for ${successfulUploads.length - failedPermissions.length}/${successfulUploads.length} files. ${failedPermissions.length} failed.`
+                };
+                
+                console.log(`✅ Permissions updated for ${permissionResult.filesUpdated}/${successfulUploads.length} files`);
+                
+            } catch (error) {
+                console.error(`⚠️ Failed to set file permissions:`, error.message);
+                permissionResult = {
+                    success: false,
+                    error: error.message,
+                    message: 'Files uploaded successfully but permission setting failed'
+                };
+            }
+        }
+
         // Create agent-based symlink for property photos
         let symlinkResult = null;
         if (propertyInfo.photoType === 'property' && uploadResults.some(r => r.success)) {
@@ -553,6 +746,7 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
                 targetPath
             },
             uploads: uploadResults,
+            permissions: permissionResult,
             symlink: symlinkResult,
             totalFiles: req.files.length,
             successfulUploads: uploadResults.filter(r => r.success).length
@@ -596,6 +790,72 @@ app.get('/api/test-ssh', async (req, res) => {
             output: result.stdout.trim()
         });
     } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Test synoacltool availability
+app.get('/api/test-synoacltool', async (req, res) => {
+    try {
+        console.log('🔍 Testing synoacltool availability...');
+        const synoacltoolPath = await synologySSH.checkSynoacltool();
+        
+        // Test basic synoacltool functionality
+        const testResult = await synologySSH.executeCommand(`${synoacltoolPath} --help || ${synoacltoolPath} -h`);
+        
+        res.json({ 
+            success: true, 
+            message: 'synoacltool is available and working',
+            path: synoacltoolPath,
+            helpOutput: testResult.stdout.substring(0, 500) // First 500 chars of help
+        });
+    } catch (error) {
+        console.error('synoacltool test error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            suggestion: 'Make sure synoacltool is installed. You may need to install it via Package Center or enable Advanced Mode in DSM.'
+        });
+    }
+});
+
+// Test permission setting
+app.post('/api/test-permissions', async (req, res) => {
+    try {
+        const { filePath, readOnlyForOthers = true } = req.body;
+        
+        if (!filePath) {
+            return res.status(400).json({ error: 'filePath is required' });
+        }
+        
+        console.log(`🧪 Testing permissions for: ${filePath}`);
+        
+        // Check if it's a file or directory
+        const volumePath = filePath.replace(process.env.UPLOAD_PATH, synologySSH.volumePath);
+        const checkResult = await synologySSH.executeCommand(`test -f "${volumePath}" && echo "file" || test -d "${volumePath}" && echo "directory" || echo "not_found"`);
+        const type = checkResult.stdout.trim();
+        
+        if (type === 'not_found') {
+            return res.status(404).json({ error: 'File or directory not found' });
+        }
+        
+        let result;
+        if (type === 'file') {
+            await synologySSH.setFilePermissions(filePath, readOnlyForOthers);
+            result = { success: true, type: 'file', message: 'File permissions updated successfully' };
+        } else {
+            const dirResult = await synologySSH.setDirectoryPermissions(filePath, readOnlyForOthers);
+            result = { 
+                success: true, 
+                type: 'directory', 
+                filesUpdated: dirResult.filesUpdated,
+                message: `Directory permissions updated for ${dirResult.filesUpdated} files`
+            };
+        }
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Permission test error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
