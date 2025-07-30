@@ -25,8 +25,8 @@ Create a `.env` file in the root directory with the following variables:
 ```env
 # Synology NAS Configuration
 DSM_URL=https://your-synology-ip:5001
-USERNAME=your-synology-username
-PASSWORD=your-synology-password
+SYNOLOGY_USERNAME=your-synology-username
+SYNOLOGY_PASSWORD=your-synology-password
 UPLOAD_PATH=/your/upload/path
 
 # Server Configuration
@@ -37,8 +37,8 @@ NODE_ENV=development
 ### Required Environment Variables:
 
 - **DSM_URL**: The HTTPS URL of your Synology NAS (e.g., `https://10.0.0.4:5001`)
-- **USERNAME**: Synology user account with FileStation access
-- **PASSWORD**: Password for the Synology user account
+- **SYNOLOGY_USERNAME**: Synology user account with FileStation access
+- **SYNOLOGY_PASSWORD**: Password for the Synology user account
 - **UPLOAD_PATH**: Target directory path on the NAS (e.g., `/Legacy Marketing/CoryTest`)
 - **PORT**: (Optional) Server port, defaults to 3000
 - **NODE_ENV**: (Optional) Environment mode, defaults to development

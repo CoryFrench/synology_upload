@@ -60,16 +60,69 @@
                 </div>
             </section>
 
-            <!-- Step 2: Upload Photos -->
+            <!-- Step 2: Property Information -->
             <section class="step-section hidden" id="step2">
-                <h2>Step 2: Upload Photos</h2>
+                <h2>Step 2: Property Information</h2>
                 
                 <div class="selected-photographer">
                     <strong>Selected Photographer:</strong> <span id="selected-photographer-name"></span>
                 </div>
 
+                <form id="property-info-form">
+                    <input type="hidden" id="selected-photographer-id-step2" name="photographerId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="county">County:</label>
+                            <select id="county" name="county" required>
+                                <option value="">Select County...</option>
+                                <option value="Martin">Martin</option>
+                                <option value="Palm_Beach">Palm Beach</option>
+                                <option value="St._Lucie">St. Lucie</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="city">City:</label>
+                            <input type="text" id="city" name="city" placeholder="e.g., Stuart" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="subdivision">Subdivision:</label>
+                            <input type="text" id="subdivision" name="subdivision" placeholder="e.g., Mason Stuart" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="address">Property Address:</label>
+                            <input type="text" id="address" name="address" placeholder="e.g., 4570 S Federal Hwy" required>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="back-to-step1-from-property" class="btn btn-secondary">← Back</button>
+                        <button type="submit" class="btn btn-primary">Proceed to Upload</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Step 3: Upload Photos -->
+            <section class="step-section hidden" id="step3">
+                <h2>Step 3: Upload Photos</h2>
+                
+                <div class="property-summary">
+                    <strong>Property:</strong> <span id="property-display"></span><br>
+                    <strong>Photographer:</strong> <span id="selected-photographer-name-step3"></span>
+                </div>
+
                 <form id="photo-upload-form" enctype="multipart/form-data">
                     <input type="hidden" id="selected-photographer-id" name="photographerId">
+                    <input type="hidden" id="property-county" name="county">
+                    <input type="hidden" id="property-city" name="city">
+                    <input type="hidden" id="property-subdivision" name="subdivision">
+                    <input type="hidden" id="property-address" name="address">
                     
                     <div class="form-group">
                         <label for="photo-files">Select Photos:</label>
@@ -85,7 +138,7 @@
                     </div>
 
                     <div class="form-actions">
-                        <button type="button" id="back-to-step1" class="btn btn-secondary">← Back</button>
+                        <button type="button" id="back-to-step2" class="btn btn-secondary">← Back</button>
                         <button type="submit" class="btn btn-primary">Upload to Synology</button>
                     </div>
                 </form>

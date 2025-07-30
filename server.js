@@ -81,8 +81,8 @@ if (!fs.existsSync(photographersCSV)) {
 class SynologyAPI {
     constructor() {
         this.baseUrl = process.env.DSM_URL;
-        this.username = process.env.USERNAME;
-        this.password = process.env.PASSWORD;
+        this.username = process.env.SYNOLOGY_USERNAME;
+        this.password = process.env.SYNOLOGY_PASSWORD;
         this.uploadPath = process.env.UPLOAD_PATH;
         this.sid = null;
     }
@@ -90,6 +90,9 @@ class SynologyAPI {
     async login() {
         try {
             console.log('🔐 Logging in to Synology...');
+            console.log(`🔗 Connecting to: ${this.baseUrl}`);
+            console.log(`👤 Username: ${this.username}`);
+            
             const response = await axios.get(`${this.baseUrl}/webapi/auth.cgi`, {
                 params: {
                     api: 'SYNO.API.Auth',
@@ -102,35 +105,46 @@ class SynologyAPI {
                 },
                 httpsAgent: new (require('https')).Agent({
                     rejectUnauthorized: false
-                })
+                }),
+                timeout: 10000
             });
 
-            if (response.data.success) {
+            console.log(`📡 Response Status: ${response.status}`);
+            console.log(`📋 Response Data:`, JSON.stringify(response.data, null, 2));
+
+            if (response.data && response.data.success) {
                 this.sid = response.data.data.sid;
                 console.log(`✅ Login successful. SID: ${this.sid}`);
                 return this.sid;
             } else {
-                throw new Error(`Login failed: ${JSON.stringify(response.data)}`);
+                const errorMsg = response.data.error ? 
+                    `Code: ${response.data.error.code}` : 
+                    'Unknown error';
+                throw new Error(`Login failed: ${errorMsg}. Full response: ${JSON.stringify(response.data)}`);
             }
         } catch (error) {
+            if (error.response) {
+                console.error('❌ HTTP Error Response:', error.response.status, error.response.data);
+            }
             console.error('❌ Login error:', error.message);
             throw error;
         }
     }
 
-    async uploadFile(filePath, originalName) {
+    async uploadFile(filePath, originalName, targetPath) {
         try {
             if (!this.sid) {
                 await this.login();
             }
 
-            console.log(`📤 Uploading '${originalName}' to '${this.uploadPath}'...`);
+            const fullUploadPath = targetPath || this.uploadPath;
+            console.log(`📤 Uploading '${originalName}' to '${fullUploadPath}'...`);
 
             const formData = new FormData();
             formData.append('api', 'SYNO.FileStation.Upload');
             formData.append('version', '2');
             formData.append('method', 'upload');
-            formData.append('path', this.uploadPath);
+            formData.append('path', fullUploadPath);
             formData.append('create_parents', 'true');
             formData.append('overwrite', 'true');
             formData.append('file', fs.createReadStream(filePath), {
@@ -152,8 +166,9 @@ class SynologyAPI {
             });
 
             console.log(`[UPLOAD] Status Code: ${response.status}`);
+            console.log(`[UPLOAD] Response:`, JSON.stringify(response.data, null, 2));
             
-            if (response.data.success) {
+            if (response.data && response.data.success) {
                 console.log('✅ Upload completed successfully.');
                 return { success: true, data: response.data };
             } else {
@@ -161,9 +176,25 @@ class SynologyAPI {
                 return { success: false, error: response.data };
             }
         } catch (error) {
+            if (error.response) {
+                console.error('❌ Upload HTTP Error:', error.response.status, error.response.data);
+            }
             console.error('❌ Upload error:', error.message);
             throw error;
         }
+    }
+
+    // Helper function to create directory structure
+    buildPropertyPath(county, city, subdivision, address) {
+        // Sanitize directory names (replace spaces and special characters)
+        const sanitize = (str) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
+        
+        const sanitizedCounty = sanitize(county);
+        const sanitizedCity = sanitize(city);  
+        const sanitizedSubdivision = sanitize(subdivision);
+        const sanitizedAddress = sanitize(address);
+        
+        return `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedSubdivision}/${sanitizedSubdivision}/${sanitizedAddress}`;
     }
 }
 
@@ -260,10 +291,14 @@ app.post('/api/photographers', upload.single('agreement'), async (req, res) => {
 // Upload photos to Synology
 app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
     try {
-        const { photographerId } = req.body;
+        const { photographerId, county, city, subdivision, address } = req.body;
         
         if (!photographerId || !req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'Photographer ID and photo files are required' });
+        }
+
+        if (!county || !city || !subdivision || !address) {
+            return res.status(400).json({ error: 'Property information (county, city, subdivision, address) is required' });
         }
 
         const photographers = await readPhotographers();
@@ -273,11 +308,15 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             return res.status(404).json({ error: 'Photographer not found' });
         }
 
+        // Build the target directory path
+        const targetPath = synologyAPI.buildPropertyPath(county, city, subdivision, address);
+        console.log(`🏠 Target directory: ${targetPath}`);
+
         const uploadResults = [];
         
         for (const file of req.files) {
             try {
-                const result = await synologyAPI.uploadFile(file.path, file.originalname);
+                const result = await synologyAPI.uploadFile(file.path, file.originalname, targetPath);
                 uploadResults.push({
                     filename: file.originalname,
                     success: result.success,
@@ -297,6 +336,13 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
 
         res.json({
             photographer: photographer.name,
+            property: {
+                county,
+                city,
+                subdivision,
+                address,
+                targetPath
+            },
             uploads: uploadResults,
             totalFiles: req.files.length,
             successfulUploads: uploadResults.filter(r => r.success).length

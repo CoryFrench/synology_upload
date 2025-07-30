@@ -3,6 +3,7 @@ class PhotoUploadApp {
         this.photographers = [];
         this.selectedPhotographer = null;
         this.selectedFiles = [];
+        this.propertyInfo = {};
         
         this.init();
     }
@@ -29,7 +30,11 @@ class PhotoUploadApp {
         
         // Step navigation
         document.getElementById('proceed-to-upload').addEventListener('click', () => this.goToStep2());
-        document.getElementById('back-to-step1').addEventListener('click', () => this.goToStep1());
+        document.getElementById('back-to-step1-from-property').addEventListener('click', () => this.goToStep1());
+        document.getElementById('back-to-step2').addEventListener('click', () => this.goToStep2());
+        
+        // Property info form
+        document.getElementById('property-info-form').addEventListener('submit', (e) => this.onPropertyInfoSubmit(e));
         
         // File selection
         document.getElementById('photo-files').addEventListener('change', (e) => this.onFileSelect(e));
@@ -38,7 +43,7 @@ class PhotoUploadApp {
         document.getElementById('photo-upload-form').addEventListener('submit', (e) => this.uploadPhotos(e));
         
         // Results actions
-        document.getElementById('upload-more').addEventListener('click', () => this.goToStep2());
+        document.getElementById('upload-more').addEventListener('click', () => this.goToStep3());
         document.getElementById('start-over').addEventListener('click', () => this.startOver());
     }
 
@@ -150,6 +155,7 @@ class PhotoUploadApp {
     goToStep1() {
         document.getElementById('step1').classList.remove('hidden');
         document.getElementById('step2').classList.add('hidden');
+        document.getElementById('step3').classList.add('hidden');
         document.getElementById('upload-results').classList.add('hidden');
     }
 
@@ -161,10 +167,50 @@ class PhotoUploadApp {
         
         document.getElementById('step1').classList.add('hidden');
         document.getElementById('step2').classList.remove('hidden');
+        document.getElementById('step3').classList.add('hidden');
         document.getElementById('upload-results').classList.add('hidden');
         
         document.getElementById('selected-photographer-name').textContent = this.selectedPhotographer.name;
+        document.getElementById('selected-photographer-id-step2').value = this.selectedPhotographer.id;
+    }
+
+    goToStep3() {
+        if (!this.selectedPhotographer || !this.propertyInfo.address) {
+            this.showMessage('Please complete property information first', 'error');
+            return;
+        }
+        
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('step3').classList.remove('hidden');
+        document.getElementById('upload-results').classList.add('hidden');
+        
+        // Update property display
+        const propertyDisplay = `${this.propertyInfo.address}, ${this.propertyInfo.city}, ${this.propertyInfo.county}`;
+        document.getElementById('property-display').textContent = propertyDisplay;
+        document.getElementById('selected-photographer-name-step3').textContent = this.selectedPhotographer.name;
+        
+        // Set hidden form values
         document.getElementById('selected-photographer-id').value = this.selectedPhotographer.id;
+        document.getElementById('property-county').value = this.propertyInfo.county;
+        document.getElementById('property-city').value = this.propertyInfo.city;
+        document.getElementById('property-subdivision').value = this.propertyInfo.subdivision;
+        document.getElementById('property-address').value = this.propertyInfo.address;
+    }
+
+    onPropertyInfoSubmit(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        this.propertyInfo = {
+            county: formData.get('county'),
+            city: formData.get('city'),
+            subdivision: formData.get('subdivision'),
+            address: formData.get('address')
+        };
+        
+        console.log('Property Info:', this.propertyInfo);
+        this.goToStep3();
     }
 
     onFileSelect(e) {
@@ -217,6 +263,10 @@ class PhotoUploadApp {
         
         const formData = new FormData();
         formData.append('photographerId', this.selectedPhotographer.id);
+        formData.append('county', this.propertyInfo.county);
+        formData.append('city', this.propertyInfo.city);
+        formData.append('subdivision', this.propertyInfo.subdivision);
+        formData.append('address', this.propertyInfo.address);
         
         this.selectedFiles.forEach(file => {
             formData.append('photos', file);
@@ -256,7 +306,7 @@ class PhotoUploadApp {
     }
 
     showUploadResults(result) {
-        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('step3').classList.add('hidden');
         document.getElementById('upload-results').classList.remove('hidden');
         
         const content = document.getElementById('results-content');
@@ -266,6 +316,8 @@ class PhotoUploadApp {
         summary.innerHTML = `
             <h3>Upload Summary</h3>
             <p><strong>Photographer:</strong> ${result.photographer}</p>
+            <p><strong>Property:</strong> ${result.property.address}, ${result.property.city}, ${result.property.county}</p>
+            <p><strong>Upload Path:</strong> ${result.property.targetPath}</p>
             <p><strong>Total Files:</strong> ${result.totalFiles}</p>
             <p><strong>Successful Uploads:</strong> ${result.successfulUploads}</p>
             <p><strong>Failed Uploads:</strong> ${result.totalFiles - result.successfulUploads}</p>
@@ -337,8 +389,10 @@ class PhotoUploadApp {
     startOver() {
         this.selectedPhotographer = null;
         this.selectedFiles = [];
+        this.propertyInfo = {};
         
         document.getElementById('photographer-select').value = '';
+        document.getElementById('property-info-form').reset();
         document.getElementById('photo-upload-form').reset();
         
         this.hidePhotographerActions();
