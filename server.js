@@ -189,11 +189,14 @@ class SynologyAPI {
         // Sanitize directory names (replace spaces and special characters)
         const sanitize = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_') : '';
         
+        const currentYear = new Date().getFullYear();
+        
         if (propertyInfo.photoType === 'property') {
             const sanitizedCounty = sanitize(propertyInfo.county);
             const sanitizedCity = sanitize(propertyInfo.city);
             const sanitizedDevelopment = sanitize(propertyInfo.development);
             const sanitizedSubdivision = sanitize(propertyInfo.subdivision);
+            const sanitizedAgent = sanitize(propertyInfo.agent);
             
             // Build address from components
             const addressParts = [
@@ -205,11 +208,14 @@ class SynologyAPI {
             const sanitizedAddress = sanitize(addressParts);
             const sanitizedUnit = sanitize(propertyInfo.unitNumber);
             
-            // Structure: Listings/County/City/Development/Development/Address[_Unit]
-            let path = `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${sanitizedAddress}`;
+            // Build final directory name: Address_AgentName_Year[_Unit]
+            let finalDirectoryName = `${sanitizedAddress}_${sanitizedAgent}_${currentYear}`;
             if (sanitizedUnit) {
-                path += `_${sanitizedUnit}`;
+                finalDirectoryName += `_${sanitizedUnit}`;
             }
+            
+            // Structure: Listings/County/City/Development/Development/Address_AgentName_Year[_Unit]
+            const path = `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${finalDirectoryName}`;
             
             return path;
             
@@ -219,8 +225,11 @@ class SynologyAPI {
             const sanitizedDevelopment = sanitize(propertyInfo.development);
             const sanitizedAmenity = sanitize(propertyInfo.amenityDescription);
             
-            // Structure: Amenities/County/City/Development/AmenityDescription
-            return `${this.uploadPath}/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedAmenity}`;
+            // For amenities, we'll also include the year
+            const finalDirectoryName = `${sanitizedAmenity}_${currentYear}`;
+            
+            // Structure: Amenities/County/City/Development/AmenityDescription_Year
+            return `${this.uploadPath}/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${finalDirectoryName}`;
         }
         
         throw new Error('Invalid photo type');

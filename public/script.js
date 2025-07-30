@@ -191,12 +191,14 @@ class PhotoUploadApp {
         
         // Update property display based on photo type
         let propertyDisplay = '';
+        const currentYear = new Date().getFullYear();
+        
         if (this.propertyInfo.photoType === 'property') {
             const address = `${this.propertyInfo.streetNumber || ''} ${this.propertyInfo.streetName || ''} ${this.propertyInfo.streetSuffix || ''}`.trim();
             const unit = this.propertyInfo.unitNumber ? `, ${this.propertyInfo.unitNumber}` : '';
-            propertyDisplay = `${address}${unit}, ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
+            propertyDisplay = `${address}${unit} - ${this.propertyInfo.agent || ''} (${currentYear}) - ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
         } else if (this.propertyInfo.photoType === 'amenity') {
-            propertyDisplay = `${this.propertyInfo.amenityDescription || ''} - ${this.propertyInfo.development || ''}, ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
+            propertyDisplay = `${this.propertyInfo.amenityDescription || ''} (${currentYear}) - ${this.propertyInfo.development || ''}, ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
         }
         
         document.getElementById('property-display').textContent = propertyDisplay;
