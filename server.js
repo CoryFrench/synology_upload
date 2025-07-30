@@ -185,16 +185,45 @@ class SynologyAPI {
     }
 
     // Helper function to create directory structure
-    buildPropertyPath(county, city, subdivision, address) {
+    buildPropertyPath(propertyInfo) {
         // Sanitize directory names (replace spaces and special characters)
-        const sanitize = (str) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
+        const sanitize = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_') : '';
         
-        const sanitizedCounty = sanitize(county);
-        const sanitizedCity = sanitize(city);  
-        const sanitizedSubdivision = sanitize(subdivision);
-        const sanitizedAddress = sanitize(address);
+        if (propertyInfo.photoType === 'property') {
+            const sanitizedCounty = sanitize(propertyInfo.county);
+            const sanitizedCity = sanitize(propertyInfo.city);
+            const sanitizedDevelopment = sanitize(propertyInfo.development);
+            const sanitizedSubdivision = sanitize(propertyInfo.subdivision);
+            
+            // Build address from components
+            const addressParts = [
+                propertyInfo.streetNumber,
+                propertyInfo.streetName,
+                propertyInfo.streetSuffix
+            ].filter(part => part && part.trim()).join('_');
+            
+            const sanitizedAddress = sanitize(addressParts);
+            const sanitizedUnit = sanitize(propertyInfo.unitNumber);
+            
+            // Structure: Listings/County/City/Development/Development/Address[_Unit]
+            let path = `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedDevelopment}/${sanitizedAddress}`;
+            if (sanitizedUnit) {
+                path += `_${sanitizedUnit}`;
+            }
+            
+            return path;
+            
+        } else if (propertyInfo.photoType === 'amenity') {
+            const sanitizedCounty = sanitize(propertyInfo.county);
+            const sanitizedCity = sanitize(propertyInfo.city);
+            const sanitizedDevelopment = sanitize(propertyInfo.development);
+            const sanitizedAmenity = sanitize(propertyInfo.amenityDescription);
+            
+            // Structure: Amenities/County/City/Development/AmenityDescription
+            return `${this.uploadPath}/Amenities/${sanitizedCounty}/${sanitizedCity}/${sanitizedDevelopment}/${sanitizedAmenity}`;
+        }
         
-        return `${this.uploadPath}/Listings/${sanitizedCounty}/${sanitizedCity}/${sanitizedSubdivision}/${sanitizedSubdivision}/${sanitizedAddress}`;
+        throw new Error('Invalid photo type');
     }
 }
 
@@ -291,14 +320,14 @@ app.post('/api/photographers', upload.single('agreement'), async (req, res) => {
 // Upload photos to Synology
 app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
     try {
-        const { photographerId, county, city, subdivision, address } = req.body;
+        const { photographerId, photoType } = req.body;
         
         if (!photographerId || !req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'Photographer ID and photo files are required' });
         }
 
-        if (!county || !city || !subdivision || !address) {
-            return res.status(400).json({ error: 'Property information (county, city, subdivision, address) is required' });
+        if (!photoType) {
+            return res.status(400).json({ error: 'Photo type is required' });
         }
 
         const photographers = await readPhotographers();
@@ -308,8 +337,44 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
             return res.status(404).json({ error: 'Photographer not found' });
         }
 
+        // Extract property information based on photo type
+        const propertyInfo = { photoType };
+        
+        if (photoType === 'property') {
+            propertyInfo.agent = req.body.agent;
+            propertyInfo.county = req.body.county;
+            propertyInfo.city = req.body.city;
+            propertyInfo.development = req.body.development;
+            propertyInfo.subdivision = req.body.subdivision;
+            propertyInfo.streetNumber = req.body.streetNumber;
+            propertyInfo.streetName = req.body.streetName;
+            propertyInfo.streetSuffix = req.body.streetSuffix;
+            propertyInfo.unitNumber = req.body.unitNumber;
+            
+            // Validate required fields for property
+            if (!propertyInfo.agent || !propertyInfo.county || !propertyInfo.city || 
+                !propertyInfo.development || !propertyInfo.streetNumber || !propertyInfo.streetName) {
+                return res.status(400).json({ 
+                    error: 'Required property fields: agent, county, city, development, street number, street name' 
+                });
+            }
+        } else if (photoType === 'amenity') {
+            propertyInfo.county = req.body.county;
+            propertyInfo.city = req.body.city;
+            propertyInfo.development = req.body.development;
+            propertyInfo.subdivision = req.body.subdivision;
+            propertyInfo.amenityDescription = req.body.amenityDescription;
+            
+            // Validate required fields for amenity
+            if (!propertyInfo.county || !propertyInfo.amenityDescription) {
+                return res.status(400).json({ 
+                    error: 'Required amenity fields: county, amenity description' 
+                });
+            }
+        }
+
         // Build the target directory path
-        const targetPath = synologyAPI.buildPropertyPath(county, city, subdivision, address);
+        const targetPath = synologyAPI.buildPropertyPath(propertyInfo);
         console.log(`🏠 Target directory: ${targetPath}`);
 
         const uploadResults = [];
@@ -337,10 +402,7 @@ app.post('/api/upload', upload.array('photos', 10), async (req, res) => {
         res.json({
             photographer: photographer.name,
             property: {
-                county,
-                city,
-                subdivision,
-                address,
+                ...propertyInfo,
                 targetPath
             },
             uploads: uploadResults,

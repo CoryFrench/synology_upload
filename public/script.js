@@ -36,6 +36,10 @@ class PhotoUploadApp {
         // Property info form
         document.getElementById('property-info-form').addEventListener('submit', (e) => this.onPropertyInfoSubmit(e));
         
+        // Photo type radio buttons
+        document.getElementById('property-radio').addEventListener('change', () => this.onPhotoTypeChange('property'));
+        document.getElementById('amenity-radio').addEventListener('change', () => this.onPhotoTypeChange('amenity'));
+        
         // File selection
         document.getElementById('photo-files').addEventListener('change', (e) => this.onFileSelect(e));
         
@@ -175,8 +179,8 @@ class PhotoUploadApp {
     }
 
     goToStep3() {
-        if (!this.selectedPhotographer || !this.propertyInfo.address) {
-            this.showMessage('Please complete property information first', 'error');
+        if (!this.selectedPhotographer || !this.propertyInfo.photoType) {
+            this.showMessage('Please complete photo information first', 'error');
             return;
         }
         
@@ -185,29 +189,65 @@ class PhotoUploadApp {
         document.getElementById('step3').classList.remove('hidden');
         document.getElementById('upload-results').classList.add('hidden');
         
-        // Update property display
-        const propertyDisplay = `${this.propertyInfo.address}, ${this.propertyInfo.city}, ${this.propertyInfo.county}`;
+        // Update property display based on photo type
+        let propertyDisplay = '';
+        if (this.propertyInfo.photoType === 'property') {
+            const address = `${this.propertyInfo.streetNumber || ''} ${this.propertyInfo.streetName || ''} ${this.propertyInfo.streetSuffix || ''}`.trim();
+            const unit = this.propertyInfo.unitNumber ? `, ${this.propertyInfo.unitNumber}` : '';
+            propertyDisplay = `${address}${unit}, ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
+        } else if (this.propertyInfo.photoType === 'amenity') {
+            propertyDisplay = `${this.propertyInfo.amenityDescription || ''} - ${this.propertyInfo.development || ''}, ${this.propertyInfo.city || ''}, ${this.propertyInfo.county || ''}`;
+        }
+        
         document.getElementById('property-display').textContent = propertyDisplay;
         document.getElementById('selected-photographer-name-step3').textContent = this.selectedPhotographer.name;
         
         // Set hidden form values
         document.getElementById('selected-photographer-id').value = this.selectedPhotographer.id;
-        document.getElementById('property-county').value = this.propertyInfo.county;
-        document.getElementById('property-city').value = this.propertyInfo.city;
-        document.getElementById('property-subdivision').value = this.propertyInfo.subdivision;
-        document.getElementById('property-address').value = this.propertyInfo.address;
+    }
+
+    onPhotoTypeChange(type) {
+        const propertyForm = document.getElementById('property-form');
+        const amenityForm = document.getElementById('amenity-form');
+        
+        if (type === 'property') {
+            propertyForm.classList.remove('hidden');
+            amenityForm.classList.add('hidden');
+        } else if (type === 'amenity') {
+            propertyForm.classList.add('hidden');
+            amenityForm.classList.remove('hidden');
+        }
     }
 
     onPropertyInfoSubmit(e) {
         e.preventDefault();
         
         const formData = new FormData(e.target);
-        this.propertyInfo = {
-            county: formData.get('county'),
-            city: formData.get('city'),
-            subdivision: formData.get('subdivision'),
-            address: formData.get('address')
-        };
+        const photoType = formData.get('photoType');
+        
+        if (photoType === 'property') {
+            this.propertyInfo = {
+                photoType: 'property',
+                agent: formData.get('agent'),
+                county: formData.get('county'),
+                city: formData.get('city'),
+                development: formData.get('development'),
+                subdivision: formData.get('subdivision'),
+                streetNumber: formData.get('streetNumber'),
+                streetName: formData.get('streetName'),
+                streetSuffix: formData.get('streetSuffix'),
+                unitNumber: formData.get('unitNumber')
+            };
+        } else if (photoType === 'amenity') {
+            this.propertyInfo = {
+                photoType: 'amenity',
+                county: formData.get('county'),
+                city: formData.get('city'),
+                development: formData.get('development'),
+                subdivision: formData.get('subdivision'),
+                amenityDescription: formData.get('amenityDescription')
+            };
+        }
         
         console.log('Property Info:', this.propertyInfo);
         this.goToStep3();
@@ -263,10 +303,13 @@ class PhotoUploadApp {
         
         const formData = new FormData();
         formData.append('photographerId', this.selectedPhotographer.id);
-        formData.append('county', this.propertyInfo.county);
-        formData.append('city', this.propertyInfo.city);
-        formData.append('subdivision', this.propertyInfo.subdivision);
-        formData.append('address', this.propertyInfo.address);
+        
+        // Add all property info fields to form data
+        Object.keys(this.propertyInfo).forEach(key => {
+            if (this.propertyInfo[key]) {
+                formData.append(key, this.propertyInfo[key]);
+            }
+        });
         
         this.selectedFiles.forEach(file => {
             formData.append('photos', file);

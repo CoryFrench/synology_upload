@@ -60,9 +60,9 @@
                 </div>
             </section>
 
-            <!-- Step 2: Property Information -->
+            <!-- Step 2: Photo Type and Property Information -->
             <section class="step-section hidden" id="step2">
-                <h2>Step 2: Property Information</h2>
+                <h2>Step 2: Photo Information</h2>
                 
                 <div class="selected-photographer">
                     <strong>Selected Photographer:</strong> <span id="selected-photographer-name"></span>
@@ -71,33 +71,106 @@
                 <form id="property-info-form">
                     <input type="hidden" id="selected-photographer-id-step2" name="photographerId">
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="county">County:</label>
-                            <select id="county" name="county" required>
-                                <option value="">Select County...</option>
-                                <option value="Martin">Martin</option>
-                                <option value="Palm_Beach">Palm Beach</option>
-                                <option value="St._Lucie">St. Lucie</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="city">City:</label>
-                            <input type="text" id="city" name="city" placeholder="e.g., Stuart" required>
+                    <!-- Photo Type Selection -->
+                    <div class="form-group">
+                        <label>Photo Type:</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="photoType" value="property" id="property-radio" required>
+                                <span>Property Photos</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="photoType" value="amenity" id="amenity-radio" required>
+                                <span>Amenity Photos</span>
+                            </label>
                         </div>
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="subdivision">Subdivision:</label>
-                            <input type="text" id="subdivision" name="subdivision" placeholder="e.g., Mason Stuart" required>
+                    <!-- Property Form (hidden by default) -->
+                    <div id="property-form" class="metadata-form hidden">
+                        <h3>Property Information</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="agent">Agent: <span class="required">*</span></label>
+                                <input type="text" id="agent" name="agent">
+                            </div>
+                            <div class="form-group">
+                                <label for="property-county">County: <span class="required">*</span></label>
+                                <input type="text" id="property-county" name="county">
+                            </div>
                         </div>
                         
-                        <div class="form-group">
-                            <label for="address">Property Address:</label>
-                            <input type="text" id="address" name="address" placeholder="e.g., 4570 S Federal Hwy" required>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="property-city">City: <span class="required">*</span></label>
+                                <input type="text" id="property-city" name="city">
+                            </div>
+                            <div class="form-group">
+                                <label for="property-development">Development: <span class="required">*</span></label>
+                                <input type="text" id="property-development" name="development">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="property-subdivision">Subdivision:</label>
+                                <input type="text" id="property-subdivision" name="subdivision">
+                            </div>
+                            <div class="form-group">
+                                <label for="street-number">Street Number: <span class="required">*</span></label>
+                                <input type="text" id="street-number" name="streetNumber">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="street-name">Street Name: <span class="required">*</span></label>
+                                <input type="text" id="street-name" name="streetName">
+                            </div>
+                            <div class="form-group">
+                                <label for="street-suffix">Street Suffix:</label>
+                                <input type="text" id="street-suffix" name="streetSuffix" placeholder="e.g., St, Ave, Blvd">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="unit-number">Unit Number:</label>
+                                <input type="text" id="unit-number" name="unitNumber" placeholder="e.g., Apt 2B, Unit 101">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Amenity Form (hidden by default) -->
+                    <div id="amenity-form" class="metadata-form hidden">
+                        <h3>Amenity Information</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="amenity-county">County: <span class="required">*</span></label>
+                                <input type="text" id="amenity-county" name="county">
+                            </div>
+                            <div class="form-group">
+                                <label for="amenity-description">Amenity Description: <span class="required">*</span></label>
+                                <input type="text" id="amenity-description" name="amenityDescription" placeholder="e.g., Pool, Clubhouse, Tennis Court">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="amenity-city">City:</label>
+                                <input type="text" id="amenity-city" name="city">
+                            </div>
+                            <div class="form-group">
+                                <label for="amenity-development">Development:</label>
+                                <input type="text" id="amenity-development" name="development">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="amenity-subdivision">Subdivision:</label>
+                                <input type="text" id="amenity-subdivision" name="subdivision">
+                            </div>
                         </div>
                     </div>
 
